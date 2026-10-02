@@ -52,6 +52,7 @@ PROGS = bathsearch\
         bathconvert\
         bathemit\
         bathfetch\
+        bathscan\
         bathstat
 
 PROGOBJS = bathsearch.o\
@@ -60,6 +61,7 @@ PROGOBJS = bathsearch.o\
            bathconvert.o\
            bathemit.o\
            bathfetch.o\
+           bathscan.o\
            bathstat.o
 
 HDRS =  hmmer.h \

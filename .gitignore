@@ -25,5 +25,6 @@ src/bathbuild
 src/bathconvert
 src/bathemit
 src/bathfetch
+src/bathscan
 src/bathsearch
 src/bathstat
