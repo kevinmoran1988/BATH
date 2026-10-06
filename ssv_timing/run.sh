@@ -3,6 +3,7 @@
 #
 #   ssv_timing/run.sh [core] [compiler ...]      default: core 2, compiler gcc
 #   e.g.  ssv_timing/run.sh 2 gcc gcc-13
+#   VARS="main fold_pragma mine" and ROUNDS=1 in the environment change what is timed.
 #
 # Builds this tree twice per compiler, as the default AVX2 build and as an
 # SSE-only build, then times p7_SSVFilter() alone on one pinned core for five
@@ -24,8 +25,10 @@ CORE=${1:-2}; [ $# -gt 0 ] && shift
 [ $# -eq 0 ] && set -- gcc
 OUT=$K/results; mkdir -p $OUT
 H=$K/harness
-VARS="main main_pragma pr36 fold fold_pragma"
-ROUNDS=3
+VARS=${VARS:-"main main_pragma pr36 fold fold_pragma"}     # "main" must be first: it is the reference
+ROUNDS=${ROUNDS:-3}
+# a version is read from debug/variants/<version>/ if that exists, else from variants/<version>/
+src() { [ -f $K/debug/variants/$1/$2 ] && echo $K/debug/variants/$1/$2 || echo $K/variants/$1/$2; }
 
 if [ ! -d $ROOT/easel ]; then
   echo "== fetching easel (branch BATH)"
@@ -61,9 +64,9 @@ for CC in "$@"; do
   IA="-DHAVE_CONFIG_H -I$A/easel -I$A/src/impl_avx -I$A/src"; IS="-DHAVE_CONFIG_H -I$SS/easel -I$SS/src/impl_sse -I$SS/src"
   LA="$A/src/libhmmer.a $A/easel/libeasel.a -lm -lpthread"; LS="$SS/src/libhmmer.a $SS/easel/libeasel.a -lm -lpthread"
   for v in $VARS; do
-    $CC $CF $PTF $AVXF $IA -o $B/${v}_avx.o     -c $K/variants/$v/ssvfilter_avx.c || exit 1
-    $CC $CF $PTF $SSEF $IA -o $B/${v}_sse.o     -c $K/variants/$v/ssvfilter_sse.c || exit 1
-    $CC $CF $PTF $SSEF $IS -o $B/${v}_sseonly.o -c $K/variants/$v/ssvfilter.c     || exit 1
+    $CC $CF $PTF $AVXF $IA -o $B/${v}_avx.o     -c $(src $v ssvfilter_avx.c) || exit 1
+    $CC $CF $PTF $SSEF $IA -o $B/${v}_sse.o     -c $(src $v ssvfilter_sse.c) || exit 1
+    $CC $CF $PTF $SSEF $IS -o $B/${v}_sseonly.o -c $(src $v ssvfilter.c)     || exit 1
     $CC -O3 -I$A/src  -I$A/easel  -o $B/grid_$v   $H/ssv_grid_harness.c   $B/${v}_avx.o $B/${v}_sse.o $LA || exit 1
     $CC -O3 -I$A/src  -I$A/easel  -o $B/score_$v  $H/ssv_scores_harness.c $B/${v}_avx.o $B/${v}_sse.o $LA || exit 1
     $CC -O3 -I$SS/src -I$SS/easel -o $B/gridS_$v  $H/grid_sseonly.c       $B/${v}_sseonly.o $LS || exit 1
@@ -74,7 +77,7 @@ for CC in "$@"; do
   echo "== $CC: scores against main (22,000 calls per build)"
   for p in score scoreS; do
     for v in $VARS; do taskset -c $CORE $B/${p}_$v 2000 1 > $R/${p}_$v.txt 2> /dev/null; done
-    for v in main_pragma pr36 fold fold_pragma; do
+    for v in ${VARS#main }; do
       echo "$([ $p = score ] && echo 'AVX2 build' || echo 'SSE-only build') $v: $(diff $R/${p}_main.txt $R/${p}_$v.txt | grep -c '^[<>]') of $(wc -l < $R/${p}_$v.txt) calls differ"
     done
   done | tee $R/scores.txt
@@ -86,12 +89,12 @@ for CC in "$@"; do
   done; done
 
   { cat $R/machine.txt; echo; cat $R/latency.txt; echo; cat $R/scores.txt; echo
-    python3 $K/table.py $R $ROUNDS
+    python3 $K/table.py $R $ROUNDS $VARS
     echo "vector stack stores+loads per step, in each step loop, by band width (w)"
     echo "-- AVX2 kernel"
-    python3 $H/spill2.py main=$B/main_avx.o main_pragma=$B/main_pragma_avx.o pr36=$B/pr36_avx.o fold=$B/fold_avx.o fold_pragma=$B/fold_pragma_avx.o
+    python3 $H/spill2.py $(for v in $VARS; do printf "%s=%s " $v $B/${v}_avx.o; done)
     echo "-- SSE-only build"
-    python3 $H/spill2.py main=$B/main_sseonly.o main_pragma=$B/main_pragma_sseonly.o pr36=$B/pr36_sseonly.o fold=$B/fold_sseonly.o fold_pragma=$B/fold_pragma_sseonly.o
+    python3 $H/spill2.py $(for v in $VARS; do printf "%s=%s " $v $B/${v}_sseonly.o; done)
   } > $OUT/table_$tag.txt 2>&1
   echo; cat $OUT/table_$tag.txt
 done

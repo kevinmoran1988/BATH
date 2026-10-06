@@ -1,2 +1,4 @@
 build_*/
 results/
+debug_build/
+debug_results/
