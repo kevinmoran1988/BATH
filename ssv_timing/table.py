@@ -1,7 +1,7 @@
 # Summary tables: change in time per p7_SSVFilter() call against main; negative is faster.
 import sys
 R, rounds = sys.argv[1], int(sys.argv[2])
-V = ['main', 'pr36', 'fold', 'fold_pragma']
+V = ['main', 'main_pragma', 'pr36', 'fold', 'fold_pragma']
 Ms = [32, 64, 100, 200, 400, 1000, 2000, 3841]; Ls = [30, 100, 300, 1000]
 def load(prefix, v):
     best = {}
@@ -12,8 +12,8 @@ def load(prefix, v):
     return best
 def table(title, prefix, col):
     d = {v: load(prefix, v) for v in V}
-    print(f"{title}: pr36 / fold / fold_pragma, % change against main   [main, ns per call]")
-    print("  model " + "".join(f"{'sequence ' + str(L):>30s}" for L in Ls))
+    print(f"{title}: main_pragma / pr36 / fold / fold_pragma, % change against main   [main, ns per call]")
+    print("  model " + "".join(f"{'sequence ' + str(L):>36s}" for L in Ls))
     for M in Ms:
         print(f"  {M:5d} " + "".join("   " + " /".join(f"{(d[v][(M, L)][col] / d['main'][(M, L)][col] - 1) * 100:+4.0f}" for v in V[1:])
                                      + f"  [{d['main'][(M, L)][col]:8.0f}]" for L in Ls))

@@ -5,12 +5,13 @@
 #   e.g.  ssv_timing/run.sh 2 gcc gcc-13
 #
 # Builds this tree twice per compiler, as the default AVX2 build and as an
-# SSE-only build, then times p7_SSVFilter() alone on one pinned core for four
+# SSE-only build, then times p7_SSVFilter() alone on one pinned core for five
 # versions of the kernel:
 #   main          upstream main (b401850f)
+#   main_pragma   main, plus "#pragma GCC optimize (no-tree-coalesce-vars)"
 #   pr36          TravisWheelerLab/BATH#36 as posted (two running maxima)
 #   fold          fold each step's vectors, join the running maximum once
-#   fold_pragma   fold, plus "#pragma GCC optimize (no-tree-coalesce-vars)"
+#   fold_pragma   fold, plus the same pragma
 # Each version is the three kernel files in variants/, compiled with the
 # build's own flags and linked in front of the library. So the result does not
 # depend on which commit is checked out, and nothing but the kernel differs.
@@ -23,7 +24,7 @@ CORE=${1:-2}; [ $# -gt 0 ] && shift
 [ $# -eq 0 ] && set -- gcc
 OUT=$K/results; mkdir -p $OUT
 H=$K/harness
-VARS="main pr36 fold fold_pragma"
+VARS="main main_pragma pr36 fold fold_pragma"
 ROUNDS=3
 
 if [ ! -d $ROOT/easel ]; then
@@ -73,7 +74,7 @@ for CC in "$@"; do
   echo "== $CC: scores against main (22,000 calls per build)"
   for p in score scoreS; do
     for v in $VARS; do taskset -c $CORE $B/${p}_$v 2000 1 > $R/${p}_$v.txt 2> /dev/null; done
-    for v in pr36 fold fold_pragma; do
+    for v in main_pragma pr36 fold fold_pragma; do
       echo "$([ $p = score ] && echo 'AVX2 build' || echo 'SSE-only build') $v: $(diff $R/${p}_main.txt $R/${p}_$v.txt | grep -c '^[<>]') of $(wc -l < $R/${p}_$v.txt) calls differ"
     done
   done | tee $R/scores.txt
@@ -88,9 +89,9 @@ for CC in "$@"; do
     python3 $K/table.py $R $ROUNDS
     echo "vector stack stores+loads per step, in each step loop, by band width (w)"
     echo "-- AVX2 kernel"
-    python3 $H/spill2.py main=$B/main_avx.o pr36=$B/pr36_avx.o fold=$B/fold_avx.o fold_pragma=$B/fold_pragma_avx.o
+    python3 $H/spill2.py main=$B/main_avx.o main_pragma=$B/main_pragma_avx.o pr36=$B/pr36_avx.o fold=$B/fold_avx.o fold_pragma=$B/fold_pragma_avx.o
     echo "-- SSE-only build"
-    python3 $H/spill2.py main=$B/main_sseonly.o pr36=$B/pr36_sseonly.o fold=$B/fold_sseonly.o fold_pragma=$B/fold_pragma_sseonly.o
+    python3 $H/spill2.py main=$B/main_sseonly.o main_pragma=$B/main_pragma_sseonly.o pr36=$B/pr36_sseonly.o fold=$B/fold_sseonly.o fold_pragma=$B/fold_pragma_sseonly.o
   } > $OUT/table_$tag.txt 2>&1
   echo; cat $OUT/table_$tag.txt
 done

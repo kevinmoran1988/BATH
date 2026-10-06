@@ -24,4 +24,4 @@ for label,o in [a.split('=') for a in sys.argv[1:]]:
     cells=[]
     for w in (3,6,7,8,10,12,13,14):
         r=loops(out,f'calc_band_{w}'); cells.append(f"w{w}: "+"/".join(str(x) for x in r))
-    print(f"{label:14s} "+"   ".join(cells))
+    print(f"{label:12s} "+"   ".join(cells))
