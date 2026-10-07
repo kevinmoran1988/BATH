@@ -2,3 +2,6 @@ build_*/
 results/
 debug_build/
 debug_results/
+band_out/
+check_build_*/
+check_out/

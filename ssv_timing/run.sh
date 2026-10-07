@@ -1,31 +1,34 @@
 #!/bin/bash
 # SSV kernel timing kit. Temporary; not part of any pull request.
 #
-#   ssv_timing/run.sh [core] [compiler ...]      default: core 2, compiler gcc
+#   ssv_timing/run.sh [core] [compiler ...]      default: first CPU this shell may use, compiler gcc
 #   e.g.  ssv_timing/run.sh 2 gcc gcc-13
 #   VARS="main fold_pragma mine" and ROUNDS=1 in the environment change what is timed.
 #
 # Builds this tree twice per compiler, as the default AVX2 build and as an
-# SSE-only build, then times p7_SSVFilter() alone on one pinned core for five
+# SSE-only build, then times p7_SSVFilter() alone on one pinned core for four
 # versions of the kernel:
 #   main          upstream main (b401850f)
 #   main_pragma   main, plus "#pragma GCC optimize (no-tree-coalesce-vars)"
-#   pr36          TravisWheelerLab/BATH#36 as posted (two running maxima)
 #   fold          fold each step's vectors, join the running maximum once
-#   fold_pragma   fold, plus the same pragma
+#   pr            TravisWheelerLab/BATH#36 as it stands: fold and pragma, both for gcc only
+# (variants/ also holds pr36, the first version of the PR, and fold_pragma, the
+# same as pr without the compiler guard; add them with VARS=.)
 # Each version is the three kernel files in variants/, compiled with the
 # build's own flags and linked in front of the library. So the result does not
 # depend on which commit is checked out, and nothing but the kernel differs.
 #
-# Needs git, autoconf, make, python3, objdump and taskset. A few minutes per
-# compiler. Summaries are written to ssv_timing/results/table_<compiler>.txt.
+# Needs git, make and taskset. autoconf is used if present; otherwise the
+# generated configure shipped next to this script. python3 and objdump are only
+# needed for the summary. A few minutes per compiler. Summaries are written to
+# ssv_timing/results/table_<compiler>.txt.
 
 K=$(cd "$(dirname "$0")" && pwd); ROOT=$(cd "$K/.." && pwd)
-CORE=${1:-2}; [ $# -gt 0 ] && shift
+CORE=${1:-$(taskset -cp $$ 2> /dev/null | sed 's/.*: *//; s/[,-].*//')}; CORE=${CORE:-0}; [ $# -gt 0 ] && shift
 [ $# -eq 0 ] && set -- gcc
 OUT=$K/results; mkdir -p $OUT
 H=$K/harness
-VARS=${VARS:-"main main_pragma pr36 fold fold_pragma"}     # "main" must be first: it is the reference
+VARS=${VARS:-"main main_pragma fold pr"}     # "main" must be first: it is the reference
 ROUNDS=${ROUNDS:-3}
 # a version is read from debug/variants/<version>/ if that exists, else from variants/<version>/
 src() { [ -f $K/debug/variants/$1/$2 ] && echo $K/debug/variants/$1/$2 || echo $K/variants/$1/$2; }
@@ -51,8 +54,10 @@ for CC in "$@"; do
     if [ ! -f $T/src/libhmmer.a ]; then
       rm -rf $T; mkdir -p $T/easel
       git -C $ROOT archive HEAD | tar -x -C $T && git -C $ROOT/easel archive HEAD | tar -x -C $T/easel || { echo "could not copy the source tree"; exit 1; }
-      ( cd $T && autoconf && ./configure CC=$CC $([ $kind = sse ] && echo --disable-avx) > $B/configure_$kind.log 2>&1 \
-          && make -j$(nproc) > $B/make_$kind.log 2>&1 ) || { echo "build failed, see $B/configure_$kind.log and $B/make_$kind.log"; exit 1; }
+      if [ -z "${NO_AUTOCONF:-}" ] && command -v autoconf > /dev/null; then ( cd $T && autoconf ) || exit 1
+      else cp $K/configure.generated $T/configure && chmod +x $T/configure; fi
+      ( cd $T && ./configure CC=$CC $([ $kind = sse ] && echo --disable-avx) > $B/configure_$kind.log 2>&1 \
+          && make -j${JOBS:-8} > $B/make_$kind.log 2>&1 ) || { echo "build failed, see $B/configure_$kind.log and $B/make_$kind.log"; exit 1; }
     fi
   done
   A=$B/avx; SS=$B/sse
@@ -88,6 +93,7 @@ for CC in "$@"; do
     taskset -c $CORE $B/gridS_$v > $R/s_${v}_r$r.txt
   done; done
 
+  command -v python3 > /dev/null || { echo "python3 not found: no summary made; the raw files in $R are enough"; continue; }
   { cat $R/machine.txt; echo; cat $R/latency.txt; echo; cat $R/scores.txt; echo
     python3 $K/table.py $R $ROUNDS $VARS
     echo "vector stack stores+loads per step, in each step loop, by band width (w)"
